@@ -3,11 +3,11 @@
 from enum import Enum
 import pandas as pd
 import numpy as np
-
+import logging
 
 class RType(Enum):
     """Types of user-user and user-content interactions
-
+    
     Attributes:
         MENTION (int): mention
         QUOTE (int): quote
@@ -25,7 +25,7 @@ def parse_data(data):
     """
     Args:
         data (list(dict)): from response["data"]
-
+    
     Returns:
         pd.DataFrame: Description
     """
@@ -46,7 +46,7 @@ def parse_ref(t):
     """
     Args:
         t (dict): dictionary of referenced_tweets
-
+    
     Returns:
         dict: dictionary mapping replied_to, quoted, and retweeted to the respective tweet_ids
     """
@@ -63,150 +63,113 @@ def parse_ref(t):
         return {"replied_to": "", "quoted": "", "retweeted": ""}
 
 
-def parse_users(data):
+def parse_users(response, logger, file=None):
     """
-    Args
-        data: list(dict) from response["includes"]["users"]
-
     Args:
-        data (TYPE): Description
-
+        response (json): the entire response json
+        logger (logger): logger
+        file (None, optional): filename of response if reading from json
+    
     Returns:
-        TYPE: Description
+        pd.DataFrame: user dataframe
     """
+    try:
+        data = response["includes"]["users"]
+    except KeyError:
+        msg = "KeyError: no users in response" if (file is None) else f"KeyError: no users in response {file}"
+        logger.info(msg)
+        return pd.DataFrame()
+    
     df = pd.DataFrame.from_dict(data)
     metrics = df["public_metrics"].apply(pd.Series)
     df = pd.concat([df, metrics], axis=1)
     return df
 
-
-def parse_retweets(tweet_id, author_id, retweet_id, tweet_df, referenced_df):
+def parse_media(response, logger, file=None):
     """
-    Args
-        tweet_id: str
-        author_id: str
-        retweet_id: str
-        tweet_df: pd.DataFrame
-        referenced_df: pd.DataFrame
-
     Args:
-        tweet_id (TYPE): Description
-        author_id (TYPE): Description
-        retweet_id (TYPE): Description
-        tweet_df (TYPE): Description
-        referenced_df (TYPE): Description
-
+        response (json): the entire response json
+        logger (logger): logger
+        file (None, optional): filename of response if reading from json
+    
     Returns:
-        TYPE: Description
+        pd.DataFrame: media dataframe
     """
     try:
-        rt = referenced_df.loc[referenced_df.id == retweet_id].author_id.values[0]
-        return {
-            "src_user_id": rt,
-            "tar_user_id": author_id,
-            "tweet_id": tweet_id,
-            "rtype": RType.RETWEET.value,
-        }
-    except:
-        try:
-            rt = tweet_df.loc[referenced_df.id == retweet_id].author_id.values[0]
-            return {
-                "src_user_id": rt,
-                "tar_user_id": author_id,
-                "tweet_id": tweet_id,
-                "rtype": RType.RETWEET.value,
-            }
-        except:
-            return {}
+        data = response["includes"]["media"]
+    except KeyError:
+        msg = "KeyError: no media in response" if (file is None) else f"KeyError: no media in response {file}"
+        logger.info(msg)
+        return pd.DataFrame()
 
+    return pd.DataFrame.from_dict(data)
 
-def parse_quotes(tweet_id, author_id, quote_id, tweet_df, referenced_df):
+def concat_and_pickle(df_list, df_name, pickle_path, pickle_protocol):
     """
-    Args
-        tweet_id: str
-        author_id: str
-        quote_id: str
-        tweet_df: pd.DataFrame
-        referenced_df: pd.DataFrame
-
+    
     Args:
-        tweet_id (TYPE): Description
-        author_id (TYPE): Description
-        quote_id (TYPE): Description
-        tweet_df (TYPE): Description
-        referenced_df (TYPE): Description
-
+        df_list (list(pd.DataFrame)): list of dataframes to aggregate
+        df_name (str): the type of data being saved
+        pickle_path (str): path to save pickle to
+        pickle_protocol (int): pickle protocol to use
+    
     Returns:
-        TYPE: Description
+        None
     """
     try:
-        quid = referenced_df.loc[referenced_df.id == quote_id].author_id.values[0]
-        return {
-            "src_user_id": quid,
-            "tar_user_id": author_id,
-            "tweet_id": tweet_id,
-            "rtype": RType.QUOTE.value,
-        }
+        df = pd.concat(df_list)
     except:
+        logger.warning(f"Cannot concat {df_name} list of {len(df_list)} dataframes")
+        return
+
+    try:
+        df.to_pickle(pickle_path, protocol=pickle_protocol)
+        logger.info(f"Saved {df_name} to {pickle_path}")
+    except:
+        logger.warning(f"Cannot save {df_name} to {pickle_path}")
+
+def read_aggregate_pickle(cache_dir, save_dir, logger, agg_interval=1000, pickle_protocol=4, debug_mode=False):
+    """Read cached intermediate json files -> aggregate and pickle as dataframes
+    
+    Args:
+        cache_dir (str): directory of cached intermediate json files
+        save_dir (str): directory to write pickled dataframes to
+        logger (logger): logger
+        agg_interval (int, optional): interval at which to concatenate results and pickle
+        pickle_protocol (int, optional): pickle protocol to use
+        debug_mode (bool, optional): run on the first few files
+    """
+    all_tweets, all_users, all_media, all_ref = [], [], [], []
+    files = [f for f in os.listdir(cache_dir) if f.endswith("json")]
+    if debug_mode:
+        files = files[:10]
+    logger.info(f"{len(files)} files to process")
+    not_loaded = []
+    start = time.time()
+    for i,file in enumerate(files):
         try:
-            quid = tweet_df.loc[tweet_df.id == quote_id].author_id.values[0]
-            return {
-                "src_user_id": quid,
-                "tar_user_id": author_id,
-                "tweet_id": tweet_id,
-                "rtype": RType.QUOTE.value,
-            }
+            with open(osp.join(cache_dir, file), "r") as handle:
+                res = json.load(handle)
+            try:
+                tweets = parse_data(res["data"])
+                all_tweets.append(tweets)
+                users = parse_users(res)
+                all_users.append(users)
+                media = parse_media(res)
+                all_media.append(media)
+                try:
+                    ref = parse_data(res["includes"]["tweets"])
+                    all_ref.append(ref)
+                except KeyError:
+                    logger.info(f"KeyError: no included/referenced tweets in response {file}")
         except:
-            return {}
+            logger.warning(f"Cannot load json {file} - pass")
+            not_loaded.append(osp.join(cache_dir, file))
+            pass
 
-
-def parse_replies(tweet_id, author_id, in_reply_to_user_id):
-    """
-    Args
-        tweet_id: str
-        author_id: str
-        in_reply_to_user_id: str
-
-    Args:
-        tweet_id (TYPE): Description
-        author_id (TYPE): Description
-        in_reply_to_user_id (TYPE): Description
-
-    Returns:
-        TYPE: Description
-    """
-    return {
-        "src_user_id": in_reply_to_user_id,
-        "tar_user_id": author_id,
-        "tweet_id": tweet_id,
-        "rtype": RType.REPLY.value,
-    }
-
-
-def parse_mentions(tweet_id, author_id, entities):
-    """
-    Args
-        tweet_id: str
-        author_id: str
-        entities: str
-
-    Args:
-        tweet_id (TYPE): Description
-        author_id (TYPE): Description
-        entities (TYPE): Description
-
-    Returns:
-        TYPE: Description
-    """
-    mentions = []
-    if "mentions" in entities.keys():
-        for m in entities["mentions"]:
-            mentions.append(
-                {
-                    "src_user_id": author_id,
-                    "tar_user_id": m["id"],
-                    "tweet_id": tweet_id,
-                    "rtype": RType.MENTION.value,
-                }
-            )
-    return mentions
+        if (i%agg_interval == 0 and i > 0) or (i == len(files)-1):
+            logger.info(f"Iter {i}: {str(round(time.time()-start, 2))} s elapsed")
+            concat_and_pickle(all_tweets, "tweets", osp.join(save_dir, f"tweets_{i}.pickle"), pickle_protocol)
+            concat_and_pickle(all_users, "users", osp.join(save_dir, f"users_{i}.pickle"), pickle_protocol)
+            concat_and_pickle(all_media, "media", osp.join(save_dir, f"media_{i}.pickle"), pickle_protocol)
+            concat_and_pickle(all_ref, "ref", osp.join(save_dir, f"ref_{i}.pickle"), pickle_protocol)

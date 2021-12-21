@@ -80,8 +80,8 @@ def search_request(
     return response.json()
 
 
-def get_results(query, start_time, next_token=None, write_params=None):
-    """Summary
+def get_tweets(query, start_time, next_token=None, write_params=None):
+    """
 
     Args:
         query (str): follow twitter guidelines for building query: https://developer.twitter.com/en/docs/twitter-api/tweets/counts/integrate/build-a-query
@@ -90,7 +90,7 @@ def get_results(query, start_time, next_token=None, write_params=None):
         write_params (None, optional): dictionary with save_dir, save_name if you want to write the intermediate responses to JSON
 
     Returns:
-        pd.DataFrame: dataframe of aggregate results
+        pd.DataFrame: dataframe of aggregate tweet results only
     """
     count = 0
     page = 0
