@@ -41,8 +41,6 @@ def search_request(
     start_time,
     max_results=500,
     next_token=None,
-    write_dir=None,
-    write_root_fn=None,
 ):
     """Make and send request
 
@@ -51,8 +49,6 @@ def search_request(
         start_time (str): start time
         max_results (int, optional): max number of search results to be returned by a request, between 10 (system default) and 500 (system limit)
         next_token (None, optional): token to get the next page of results
-        write_dir (None, optional): the path you want to write the intermediate response JSON files to
-        write_root_fn (None, optional): root filename for writing the intermediate response JSON
 
     Returns:
         json: response
@@ -81,27 +77,17 @@ def search_request(
     if response.status_code != 200:
         raise Exception(response.status_code, response.text)
 
-    if write_dir:
-        assert write_root_fn is not None
-        # write response to file
-        file_name = (
-            f"{write_root_fn}_00" if not next_token else f"{write_root_fn}_{next_token}"
-        )
-        file_path = osp.join(write_dir, file_name)
-        with open(file_path, "w") as f:
-            print(f"Writing response to {file_path}.")
-            f.write(json.dumps(response.json(), indent=4))
-
     return response.json()
 
 
-def get_results(query, start_time, next_token=None):
+def get_results(query, start_time, next_token=None, write_params=None):
     """Summary
 
     Args:
         query (str): follow twitter guidelines for building query: https://developer.twitter.com/en/docs/twitter-api/tweets/counts/integrate/build-a-query
         start_time (str):  start date in ISO 8601 format (YYYY-MM-DDTHH:mm:ssZ). To search from the beginning, use "2006-03-21T00:00:00Z"
         next_token (None, optional): token to get the next page of results
+        write_params (None, optional): dictionary with save_dir, save_name if you want to write the intermediate responses to JSON
 
     Returns:
         pd.DataFrame: dataframe of aggregate results
@@ -113,14 +99,23 @@ def get_results(query, start_time, next_token=None):
     while True:
         try:
             res = search_request(query, start_time, next_token=next_token)
+            result_count = res["meta"]["result_count"]
+            count += result_count
+            page += 1
         except Exception as e:
             print(e)
+            print(f"page {page} :: num_results {count}")
             print(f"next_token: {next_token}")
             return tweet_df
 
-        result_count = res["meta"]["result_count"]
-        count += result_count
-        page += 1
+        if write_params:
+            assert("save_dir" in write_params)
+            assert("save_name" in write_params)
+            tname = 0 if (next_token is None) else next_token
+            save_file = osp.join(write_params["save_dir"], f"{write_params["save_name"]}_{page}_{tname}.json")
+            with open(save_file, "w") as handle:
+                json.dump(res, handle)
+                print(f"Wrote result to {save_file}.")
 
         d = parse.parse_data(res)
         tweet_df = tweet_df.append(d)
