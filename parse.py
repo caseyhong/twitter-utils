@@ -5,14 +5,15 @@ import pandas as pd
 import numpy as np
 import logging
 
+
 class RType(Enum):
     """Types of user-user and user-content interactions
-    
+
     Attributes:
-        MENTION (int): mention
-        QUOTE (int): quote
-        REPLY (int): reply
-        RETWEET (int): retweet
+            MENTION (int): mention
+            QUOTE (int): quote
+            REPLY (int): reply
+            RETWEET (int): retweet
     """
 
     RETWEET = 1
@@ -24,10 +25,10 @@ class RType(Enum):
 def parse_data(data):
     """
     Args:
-        data (list(dict)): from response["data"]
-    
+            data (list(dict)): from response["data"]
+
     Returns:
-        pd.DataFrame: Description
+            pd.DataFrame: Description
     """
     df = pd.DataFrame.from_dict(data)
     metrics = df["public_metrics"].apply(pd.Series)
@@ -45,10 +46,10 @@ def parse_data(data):
 def parse_ref(t):
     """
     Args:
-        t (dict): dictionary of referenced_tweets
-    
+            t (dict): dictionary of referenced_tweets
+
     Returns:
-        dict: dictionary mapping replied_to, quoted, and retweeted to the respective tweet_ids
+            dict: dictionary mapping replied_to, quoted, and retweeted to the respective tweet_ids
     """
     try:
         a = {"replied_to": "", "quoted": "", "retweeted": ""}
@@ -66,55 +67,65 @@ def parse_ref(t):
 def parse_users(response, logger, file=None):
     """
     Args:
-        response (json): the entire response json
-        logger (logger): logger
-        file (None, optional): filename of response if reading from json
-    
+            response (json): the entire response json
+            logger (logger): logger
+            file (None, optional): filename of response if reading from json
+
     Returns:
-        pd.DataFrame: user dataframe
+            pd.DataFrame: user dataframe
     """
     try:
         data = response["includes"]["users"]
     except KeyError:
-        msg = "KeyError: no users in response" if (file is None) else f"KeyError: no users in response {file}"
+        msg = (
+            "KeyError: no users in response"
+            if (file is None)
+            else f"KeyError: no users in response {file}"
+        )
         logger.info(msg)
         return pd.DataFrame()
-    
+
     df = pd.DataFrame.from_dict(data)
     metrics = df["public_metrics"].apply(pd.Series)
     df = pd.concat([df, metrics], axis=1)
     return df
 
+
 def parse_media(response, logger, file=None):
     """
     Args:
-        response (json): the entire response json
-        logger (logger): logger
-        file (None, optional): filename of response if reading from json
-    
+            response (json): the entire response json
+            logger (logger): logger
+            file (None, optional): filename of response if reading from json
+
     Returns:
-        pd.DataFrame: media dataframe
+            pd.DataFrame: media dataframe
     """
     try:
         data = response["includes"]["media"]
     except KeyError:
-        msg = "KeyError: no media in response" if (file is None) else f"KeyError: no media in response {file}"
+        msg = (
+            "KeyError: no media in response"
+            if (file is None)
+            else f"KeyError: no media in response {file}"
+        )
         logger.info(msg)
         return pd.DataFrame()
 
     return pd.DataFrame.from_dict(data)
 
+
 def concat_and_pickle(df_list, df_name, pickle_path, pickle_protocol):
     """
-    
+
     Args:
-        df_list (list(pd.DataFrame)): list of dataframes to aggregate
-        df_name (str): the type of data being saved
-        pickle_path (str): path to save pickle to
-        pickle_protocol (int): pickle protocol to use
-    
+            df_list (list(pd.DataFrame)): list of dataframes to aggregate
+            df_name (str): the type of data being saved
+            pickle_path (str): path to save pickle to
+            pickle_protocol (int): pickle protocol to use
+
     Returns:
-        None
+            None
     """
     try:
         df = pd.concat(df_list)
@@ -128,16 +139,19 @@ def concat_and_pickle(df_list, df_name, pickle_path, pickle_protocol):
     except:
         logger.warning(f"Cannot save {df_name} to {pickle_path}")
 
-def read_aggregate_pickle(cache_dir, save_dir, logger, agg_interval=1000, pickle_protocol=4, debug_mode=False):
+
+def read_aggregate_pickle(
+    cache_dir, save_dir, logger, agg_interval=1000, pickle_protocol=4, debug_mode=False
+):
     """Read cached intermediate json files -> aggregate and pickle as dataframes
-    
+
     Args:
-        cache_dir (str): directory of cached intermediate json files
-        save_dir (str): directory to write pickled dataframes to
-        logger (logger): logger
-        agg_interval (int, optional): interval at which to concatenate results and pickle
-        pickle_protocol (int, optional): pickle protocol to use
-        debug_mode (bool, optional): run on the first few files
+            cache_dir (str): directory of cached intermediate json files
+            save_dir (str): directory to write pickled dataframes to
+            logger (logger): logger
+            agg_interval (int, optional): interval at which to concatenate results and pickle
+            pickle_protocol (int, optional): pickle protocol to use
+            debug_mode (bool, optional): run on the first few files
     """
     all_tweets, all_users, all_media, all_ref = [], [], [], []
     files = [f for f in os.listdir(cache_dir) if f.endswith("json")]
@@ -146,7 +160,7 @@ def read_aggregate_pickle(cache_dir, save_dir, logger, agg_interval=1000, pickle
     logger.info(f"{len(files)} files to process")
     not_loaded = []
     start = time.time()
-    for i,file in enumerate(files):
+    for i, file in enumerate(files):
         try:
             with open(osp.join(cache_dir, file), "r") as handle:
                 res = json.load(handle)
@@ -161,15 +175,38 @@ def read_aggregate_pickle(cache_dir, save_dir, logger, agg_interval=1000, pickle
                     ref = parse_data(res["includes"]["tweets"])
                     all_ref.append(ref)
                 except KeyError:
-                    logger.info(f"KeyError: no included/referenced tweets in response {file}")
-        except:
-            logger.warning(f"Cannot load json {file} - pass")
+                    logger.info(
+                        f"KeyError: no included/referenced tweets in response {file}"
+                    )
+            except Exception as e:
+                logger.warning(f"Cannot parse data for json {file} - pass - {e}")
+                pass
+
+        except Exception as e:
+            logger.warning(f"Cannot load json {file} - pass - {e}")
             not_loaded.append(osp.join(cache_dir, file))
             pass
 
-        if (i%agg_interval == 0 and i > 0) or (i == len(files)-1):
+        if (i % agg_interval == 0 and i > 0) or (i == len(files) - 1):
             logger.info(f"Iter {i}: {str(round(time.time()-start, 2))} s elapsed")
-            concat_and_pickle(all_tweets, "tweets", osp.join(save_dir, f"tweets_{i}.pickle"), pickle_protocol)
-            concat_and_pickle(all_users, "users", osp.join(save_dir, f"users_{i}.pickle"), pickle_protocol)
-            concat_and_pickle(all_media, "media", osp.join(save_dir, f"media_{i}.pickle"), pickle_protocol)
-            concat_and_pickle(all_ref, "ref", osp.join(save_dir, f"ref_{i}.pickle"), pickle_protocol)
+            concat_and_pickle(
+                all_tweets,
+                "tweets",
+                osp.join(save_dir, f"tweets_{i}.pickle"),
+                pickle_protocol,
+            )
+            concat_and_pickle(
+                all_users,
+                "users",
+                osp.join(save_dir, f"users_{i}.pickle"),
+                pickle_protocol,
+            )
+            concat_and_pickle(
+                all_media,
+                "media",
+                osp.join(save_dir, f"media_{i}.pickle"),
+                pickle_protocol,
+            )
+            concat_and_pickle(
+                all_ref, "ref", osp.join(save_dir, f"ref_{i}.pickle"), pickle_protocol
+            )

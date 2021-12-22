@@ -16,7 +16,7 @@ def auth():
     """Get auth
 
     Returns:
-        str: bearer token
+            str: bearer token
     """
     return config.bearer_token
 
@@ -25,10 +25,10 @@ def create_search_url(next_token=None):
     """Get search url
 
     Args:
-        next_token (None, optional): next_token for pagination
+            next_token (None, optional): next_token for pagination
 
     Returns:
-        str: search url
+            str: search url
     """
     if next_token:
         return f"https://api.twitter.com/2/tweets/search/all?next_token={next_token}"
@@ -45,13 +45,13 @@ def search_request(
     """Make and send request
 
     Args:
-        query (str): search query
-        start_time (str): start time
-        max_results (int, optional): max number of search results to be returned by a request, between 10 (system default) and 500 (system limit)
-        next_token (None, optional): token to get the next page of results
+            query (str): search query
+            start_time (str): start time
+            max_results (int, optional): max number of search results to be returned by a request, between 10 (system default) and 500 (system limit)
+            next_token (None, optional): token to get the next page of results
 
     Returns:
-        json: response
+            json: response
     """
     # authenticate
     token = auth()
@@ -84,13 +84,13 @@ def get_tweets(query, start_time, next_token=None, write_params=None):
     """
 
     Args:
-        query (str): follow twitter guidelines for building query: https://developer.twitter.com/en/docs/twitter-api/tweets/counts/integrate/build-a-query
-        start_time (str):  start date in ISO 8601 format (YYYY-MM-DDTHH:mm:ssZ). To search from the beginning, use "2006-03-21T00:00:00Z"
-        next_token (None, optional): token to get the next page of results
-        write_params (None, optional): dictionary with save_dir, save_name if you want to write the intermediate responses to JSON
+            query (str): follow twitter guidelines for building query: https://developer.twitter.com/en/docs/twitter-api/tweets/counts/integrate/build-a-query
+            start_time (str):  start date in ISO 8601 format (YYYY-MM-DDTHH:mm:ssZ). To search from the beginning, use "2006-03-21T00:00:00Z"
+            next_token (None, optional): token to get the next page of results
+            write_params (None, optional): dictionary with save_dir, save_name if you want to write the intermediate responses to JSON
 
     Returns:
-        pd.DataFrame: dataframe of aggregate tweet results only
+            pd.DataFrame: dataframe of aggregate tweet results only
     """
     count = 0
     page = 0
@@ -109,10 +109,12 @@ def get_tweets(query, start_time, next_token=None, write_params=None):
             return tweet_df
 
         if write_params:
-            assert("save_dir" in write_params)
-            assert("save_name" in write_params)
+            assert "save_dir" in write_params
+            assert "save_name" in write_params
             tname = 0 if (next_token is None) else next_token
-            save_file = osp.join(write_params["save_dir"], f"{write_params["save_name"]}_{page}_{tname}.json")
+            rname = write_params["save_name"]
+            fname = f"{rname}_{page}_{tname}.json"
+            save_file = osp.join(write_params["save_dir"], fname)
             with open(save_file, "w") as handle:
                 json.dump(res, handle)
                 print(f"Wrote result to {save_file}.")
