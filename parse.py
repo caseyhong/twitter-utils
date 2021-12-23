@@ -115,6 +115,118 @@ def parse_media(response, logger, file=None):
     return pd.DataFrame.from_dict(data)
 
 
+def parse_retweets(tweet_id, author_id, retweet_id, tweet_df, referenced_df):
+    """
+    Args:
+        tweet_id (str): tweet id
+        author_id (str): author id
+        retweet_id (str): retweet id
+        tweet_df (pd.DataFrame): dataframe of tweets
+        referenced_df (pd.DataFrame): dataframe of tweets referenced in tweet_df
+
+    Returns:
+        dict: dictionary mapping retweet from the original author to author_id (the retweeter)
+    """
+    tweet_dict = tweet_df.set_index("id")["author_id"].to_dict()
+    ref_dict = referenced_df.set_index("id")["author_id"].to_dict()
+    try:
+        rt = ref_dict[retweet_id]
+        return {
+            "src_user_id": rt,
+            "tar_user_id": author_id,
+            "tweet_id": tweet_id,
+            "rtype": utils.RType.RETWEET.value,
+        }
+    except:
+        try:
+            rt = tweet_dict[retweet_id]
+            return {
+                "src_user_id": rt,
+                "tar_user_id": author_id,
+                "tweet_id": tweet_id,
+                "rtype": utils.RType.RETWEET.value,
+            }
+        except:
+            return {}
+
+
+def parse_quotes(tweet_id, author_id, quote_id, tweet_df, referenced_df):
+    """
+    Args:
+        tweet_id (str): tweet id
+        author_id (str): author id
+        quote_id (str): quote id
+        tweet_df (pd.DataFrame): dataframe of tweets
+        referenced_df (pd.DataFrame): dataframe of tweets referenced in tweet_df
+
+    Returns:
+        dict: dictionary mapping the quote from the author of the quoted tweet to author_id
+    """
+    tweet_dict = tweet_df.set_index("id")["author_id"].to_dict()
+    ref_dict = referenced_df.set_index("id")["author_id"].to_dict()
+    try:
+        quid = ref_dict[quote_id]
+        return {
+            "src_user_id": quid,
+            "tar_user_id": author_id,
+            "tweet_id": tweet_id,
+            "rtype": utils.RType.QUOTE.value,
+        }
+    except:
+        try:
+            quid = tweet_dict[quote_id]
+            return {
+                "src_user_id": quid,
+                "tar_user_id": author_id,
+                "tweet_id": tweet_id,
+                "rtype": utils.RType.QUOTE.value,
+            }
+        except:
+            return {}
+
+
+def parse_replies(tweet_id, author_id, in_reply_to_user_id):
+    """
+    Args:
+        tweet_id (str): tweet id
+        author_id (str): author id
+        in_reply_to_user_id (str): user id of original tweet
+
+    Returns:
+        dict: dictionary mapping reply from the author of the original tweet to author_id
+    """
+    return {
+        "src_user_id": in_reply_to_user_id,
+        "tar_user_id": author_id,
+        "tweet_id": tweet_id,
+        "rtype": RType.REPLY.value,
+    }
+
+
+def parse_mentions(tweet_id, author_id, entities):
+    """
+    Args:
+        tweet_id (str): tweet id
+        author_id (str): author id
+        entities (dict): entities in tweet
+
+    Returns:
+        list(dict): list of all mentioned users in the tweet by author_id
+    """
+    mentions = []
+    if "mentions" in entities.keys():
+        for m in entities["mentions"]:
+            mentions.append(
+                {
+                    "src_user_id": author_id,
+                    "tar_user_id": m["id"],
+                    "tweet_id": tweet_id,
+                    "rtype": RType.MENTION.value,
+                }
+            )
+    return mentions
+
+
 def concat_and_pickle(df_list, df_name, pickle_path, pickle_protocol):
     """
 
@@ -132,6 +244,10 @@ def concat_and_pickle(df_list, df_name, pickle_path, pickle_protocol):
     except:
         logger.warning(f"Cannot concat {df_name} list of {len(df_list)} dataframes")
         return
+
+    df = df.replace(
+        to_replace=[r"^\s*$", None], value=np.nan, regex=True
+    )  # cleanup nulls
 
     try:
         df.to_pickle(pickle_path, protocol=pickle_protocol)
