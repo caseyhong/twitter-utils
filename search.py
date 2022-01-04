@@ -7,6 +7,8 @@ import os.path as osp
 import pandas as pd
 import requests
 import time
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 
 import config  # credentials
 import parse
@@ -73,7 +75,12 @@ def search_request(
         "max_results": max_results,
     }
     # make request
-    response = requests.request("GET", url, headers=headers, params=params)
+    s = requests.Session()
+    retries = Retry(total=3, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
+    s.mount("http://", HTTPAdapter(max_retries=retries))
+    response = s.get(url, headers=headers, params=params)
+    # response = requests.request("GET", url, headers=headers, params=params)
+
     if response.status_code != 200:
         raise Exception(response.status_code, response.text)
 
